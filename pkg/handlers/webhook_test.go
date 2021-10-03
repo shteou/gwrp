@@ -22,3 +22,44 @@ func TestInvalidSignature(t *testing.T) {
 	assert.Nil(t, err)
 	assert.False(t, result)
 }
+
+func TestRouteParse(t *testing.T) {
+	envVars := []string{
+		"RULE_TEST=event|address|jq rule",
+	}
+	routes := getRoutes(envVars)
+	assert.Len(t, routes, 1)
+	assert.Len(t, routes[0].events, 1)
+	assert.Equal(t, "event", routes[0].events[0])
+	assert.Equal(t, "address", routes[0].route)
+	assert.Equal(t, "RULE_TEST", routes[0].name)
+	assert.Equal(t, "jq rule", routes[0].query)
+}
+
+func TestRouteParseMultiple(t *testing.T) {
+	envVars := []string{
+		"RULE_TEST=event|address|jq rule",
+		"RULE_FOO=event2|address2|jq rule2",
+	}
+	routes := getRoutes(envVars)
+	assert.Len(t, routes, 2)
+	assert.Equal(t, "event2", routes[1].events[0])
+}
+
+func TestRouteParseInvaid(t *testing.T) {
+	envVars := []string{
+		"RULE_TEST=event|address|jq rule",
+		"RULE_FOO=event|address",
+	}
+	routes := getRoutes(envVars)
+	assert.Len(t, routes, 1)
+}
+
+func TestRouteMultipleEvents(t *testing.T) {
+	envVars := []string{
+		"RULE_TEST=event1,event2|address|jq rule",
+	}
+	routes := getRoutes(envVars)
+	assert.Len(t, routes, 1)
+	assert.Len(t, routes[0].events, 2)
+}
