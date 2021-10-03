@@ -55,11 +55,27 @@ func TestRouteParseInvaid(t *testing.T) {
 	assert.Len(t, routes, 1)
 }
 
-func TestRouteMultipleEvents(t *testing.T) {
+func TestRouteParseMultipleEvents(t *testing.T) {
 	envVars := []string{
 		"RULE_TEST=event1,event2|address|jq rule",
 	}
 	routes := getRoutes(envVars)
 	assert.Len(t, routes, 1)
 	assert.Len(t, routes[0].events, 2)
+}
+
+func TestRouteMatchesEvent(t *testing.T) {
+	route := route{events: []string{"ping"}, name: "foo", query: ".", route: "somewhere"}
+	matches, err := routeMatches([]byte("{}"), "ping", route)
+
+	assert.Nil(t, err)
+	assert.True(t, matches)
+}
+
+func TestRouteDoesntMatchEvent(t *testing.T) {
+	route := route{events: []string{"ping"}, name: "foo", query: ".", route: "somewhere"}
+	matches, err := routeMatches([]byte("{}"), "pull_request", route)
+
+	assert.Nil(t, err)
+	assert.False(t, matches)
 }

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/itchyny/gojq"
 )
 
 func errorResponse(w http.ResponseWriter, r *http.Request, err error, statusCode int) {
@@ -49,7 +51,6 @@ func getRoutes(envVars []string) []route {
 
 		if strings.HasPrefix(key, "RULE_") {
 			ruleParts := strings.SplitN(val, "|", 4)
-			fmt.Printf("%d\n", len(ruleParts))
 			if len(ruleParts) != 3 {
 				fmt.Printf("Failed to parse rule: %s, wrong number of parts\n", key)
 				continue
@@ -72,16 +73,56 @@ func routeWebhook(body []byte, route route) error {
 	return nil
 }
 
-func routeMatches(body []byte, route route) (bool, error) {
+func stringArrayContains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+func routeMatches(body []byte, event string, route route) (bool, error) {
+	query, err := gojq.Parse(route.query)
+	if err != nil {
+		return false, err
+	}
+
+	if !stringArrayContains(route.events, event) {
+		return false, nil
+	}
+
+	input := map[string]interface{}{}
+	err = json.Unmarshal(body, &input)
+	if err != nil {
+		return false, err
+	}
+
+	iter := query.Run(input)
+	for {
+		v, ok := iter.Next()
+		if !ok {
+			// Finished iteration, must have found a match
+			break
+		}
+
+		// Received an error, didn't match
+		if err, ok := v.(error); ok {
+			return false, err
+		}
+
+		// Didn't match, skip
+		if v == false {
+			return false, nil
+		}
+	}
+
 	return true, nil
 }
 
-func routeWebhooks(body []byte, routes []route) error {
+func routeWebhooks(body []byte, event string, routes []route) error {
 	for _, r := range routes {
-		fmt.Printf("Testing route: %s\n", r.name)
-		fmt.Printf("%s\n", r.query)
-
-		matches, err := routeMatches(body, r)
+		matches, err := routeMatches(body, event, r)
 		if err != nil {
 			fmt.Printf("%s had an error, skipping\n", err)
 		}
@@ -94,7 +135,7 @@ func routeWebhooks(body []byte, routes []route) error {
 	return nil
 }
 
-func handleWebhook(body []byte, signature string, secret string, routes []route) (int, error) {
+func handleWebhook(body []byte, signature string, secret string, event string, routes []route) (int, error) {
 	validSignature, err := isValidSignature(secret, signature, body)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to check if signature is valid: %w+", err)
@@ -104,7 +145,7 @@ func handleWebhook(body []byte, signature string, secret string, routes []route)
 		return http.StatusBadRequest, fmt.Errorf("invalid signature")
 	}
 
-	err = routeWebhooks(body, routes)
+	err = routeWebhooks(body, event, routes)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to route webhook: %w+", err)
 	}
@@ -133,7 +174,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	routes := getRoutes(os.Environ())
 
-	statusCode, err := handleWebhook(bs, signature, secret, routes)
+	statusCode, err := handleWebhook(bs, signature, secret, r.Header.Get("X-GitHub-Event"), routes)
 	if err != nil {
 		errorResponse(w, r, err, statusCode)
 		return
