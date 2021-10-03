@@ -11,7 +11,7 @@ avoids the limitation on the number of webhooks for each
 
 ## Example configuration
 
-The following environment variables define two rules, GWRP_PRS and AL_PINGS.
+The following environment variables define two rules, `GWRP_PRS` and `ALL_PINGS`.
 
 Each rule is of the form `github,event,list|url|jq query`.
 
