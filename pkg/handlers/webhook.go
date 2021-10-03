@@ -1,15 +1,18 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/itchyny/gojq"
 )
@@ -68,9 +71,35 @@ func getRoutes(envVars []string) []route {
 	return routes
 }
 
-func routeWebhook(body []byte, route route) error {
-	fmt.Printf("Sending webhook to %s\n", route.route)
-	return nil
+func routeWebhook(r *http.Request, body []byte, route route, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	fmt.Printf("Sending payload to %s\n", route.route)
+
+	proxyReq, err := http.NewRequest("POST", route.route, io.NopCloser(bytes.NewReader(body)))
+	if err != nil {
+		fmt.Printf("Failed to make request to %s: %v\n", route.route, err)
+		return
+	}
+
+	// Copy headers
+	for _, header := range []string{"Content-Type", "X-GitHub-Delivery", "X-GitHub-Event", "X-GitHub-Hook-ID", "X-GitHub-Hook-Installation-Target-ID",
+		"X-GitHub-Hook-Installation-Target-Type", "X-Hub-Signature", "X-Hub-Signature-256"} {
+		proxyReq.Header.Add(header, r.Header.Get(header))
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		fmt.Printf("Failed to proxy payload to %s: %v\n", route.route, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		fmt.Printf("Failed to proxy payload to %s: status code: %d\n", route.route, resp.StatusCode)
+	}
+
 }
 
 func stringArrayContains(s []string, e string) bool {
@@ -120,22 +149,25 @@ func routeMatches(body []byte, event string, route route) (bool, error) {
 	return true, nil
 }
 
-func routeWebhooks(body []byte, event string, routes []route) error {
-	for _, r := range routes {
-		matches, err := routeMatches(body, event, r)
+func routeWebhooks(r *http.Request, body []byte, event string, routes []route) {
+	wg := sync.WaitGroup{}
+
+	for _, route := range routes {
+		matches, err := routeMatches(body, event, route)
 		if err != nil {
 			fmt.Printf("%s had an error, skipping\n", err)
 		}
 
 		if matches {
-			routeWebhook(body, r)
+			wg.Add(1)
+			go routeWebhook(r, body, route, &wg)
 		}
 	}
 
-	return nil
+	wg.Wait()
 }
 
-func handleWebhook(body []byte, signature string, secret string, event string, routes []route) (int, error) {
+func handleWebhook(r *http.Request, body []byte, signature string, secret string, event string, routes []route) (int, error) {
 	validSignature, err := isValidSignature(secret, signature, body)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to check if signature is valid: %w+", err)
@@ -145,7 +177,7 @@ func handleWebhook(body []byte, signature string, secret string, event string, r
 		return http.StatusBadRequest, fmt.Errorf("invalid signature")
 	}
 
-	err = routeWebhooks(body, event, routes)
+	routeWebhooks(r, body, event, routes)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to route webhook: %w+", err)
 	}
@@ -174,7 +206,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	routes := getRoutes(os.Environ())
 
-	statusCode, err := handleWebhook(bs, signature, secret, r.Header.Get("X-GitHub-Event"), routes)
+	statusCode, err := handleWebhook(r, bs, signature, secret, r.Header.Get("X-GitHub-Event"), routes)
 	if err != nil {
 		errorResponse(w, r, err, statusCode)
 		return
