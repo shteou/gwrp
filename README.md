@@ -49,3 +49,4 @@ rules:
     route: https://my-receiver:8080/pings
     jq: .
 ```
+
