@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	gorillahandlers "github.com/gorilla/handlers"
 	"github.com/shteou/gwrp/pkg/handlers"
 )
 
@@ -44,9 +45,11 @@ func main() {
 
 	http.Handle("/", r)
 
+	loggingHandler := gorillahandlers.LoggingHandler(os.Stdout, r)
+
 	srv := server{
 		Server: http.Server{
-			Handler:      r,
+			Handler:      loggingHandler,
 			Addr:         "0.0.0.0:8080",
 			WriteTimeout: 60 * time.Second,
 			ReadTimeout:  60 * time.Second,
