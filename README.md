@@ -29,3 +29,23 @@ A GitHub Webhook should be setup pointing to your gwrp instance on the `/webhook
 the json payload option. You can choose to send all events to gwrp, or just a subset.
 
 You can also setup an organization webhook to forward to gwrp.
+
+## Helm Installations
+
+A fairly standard helm chart is supplied. `gitHub.secretKey` must be supplied, and an arbitrary number
+of rules can be configured as in the following example::
+
+```yaml
+gitHub:
+  secretKey: "your-secret-key"
+
+rules:
+  GWRP_PRS:
+    events: pull_requests
+    route: https://my-receiver:8080/gwrp-webhook
+    jq: .repository.full_name == \"shteou/gwrp\"
+  ALL_PINGS:
+    events: ping
+    route: https://my-receiver:8080/pings
+    jq: .
+```
