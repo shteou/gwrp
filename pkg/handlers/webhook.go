@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,7 +33,8 @@ func isValidSignature(secret string, signature string, body []byte) (bool, error
 	}
 
 	digest := mac.Sum(nil)
-	return hex.EncodeToString(digest) == signature, nil
+	actual := fmt.Sprintf("sha256=%x", digest)
+	return actual == signature, nil
 }
 
 type route struct {
@@ -192,7 +192,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	signature := strings.TrimLeft(r.Header.Get("X-Hub-Signature-256"), "sha256=")
+	signature := r.Header.Get("X-Hub-Signature-256")
 	if signature == "" {
 		errorResponse(w, r, fmt.Errorf("signature header not found"), http.StatusBadRequest)
 		return
