@@ -8,8 +8,20 @@ import (
 
 func TestValidSignature(t *testing.T) {
 	// echo -n "data" | openssl dgst -sha256 -hmac secret
-	signature := "1b2c16b75bd2a870c114153ccda5bcfca63314bc722fa160d690de133ccbb9db"
+	signature := "sha256=1b2c16b75bd2a870c114153ccda5bcfca63314bc722fa160d690de133ccbb9db"
 	result, err := isValidSignature("secret", signature, []byte("data"))
+
+	assert.Nil(t, err)
+	assert.True(t, result)
+}
+
+func TestValidSignatureWithLeadingsha256Chars(t *testing.T) {
+	// TrimLeft was previously used to strip sha256= from the Signature header
+	// This caused a bug because all characters from sha256= were being stripped in the
+	// prefix, i.e. sigs starting with a would have that stripped
+	// echo -n "data1" | openssl dgst -sha256 -hmac secret
+	signature := "sha256=adbf386f8df2776192df3c30026d3bd19f01bff25dd0bfa10852caea9bc4759c"
+	result, err := isValidSignature("secret", signature, []byte("data1"))
 
 	assert.Nil(t, err)
 	assert.True(t, result)
@@ -46,7 +58,7 @@ func TestRouteParseMultiple(t *testing.T) {
 	assert.Equal(t, "event2", routes[1].events[0])
 }
 
-func TestRouteParseInvaid(t *testing.T) {
+func TestRouteParseInvalid(t *testing.T) {
 	envVars := []string{
 		"RULE_TEST=event|address|jq rule",
 		"RULE_FOO=event|address",
